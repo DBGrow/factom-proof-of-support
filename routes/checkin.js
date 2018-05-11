@@ -15,13 +15,19 @@ var contacts = require('../contacts/contacts');
 
 function init(app) {
     app.post('/checkin', function (req, res) {
-        // console.log(JSON.stringify(req.query))
+        console.log(JSON.stringify(req.query));
         var nonce = req.query.nonce;
         var signed_nonce = req.query.signed_nonce;
         var message = req.query.message;
 
-        // console.log('SERVER: got nonce: ' + nonce);
-        // console.log('SERVER: got signed_nonce: ' + signed_nonce);
+        console.log('SERVER: got nonce: ' + nonce);
+        console.log('SERVER: got signed_nonce: ' + signed_nonce);
+
+        if (!nonce || !signed_nonce) {
+            res.status(403).send("Your request must include both the nonce and it's signature");
+            console.error("Client request didn't include both the nonce and it's signature");
+            return;
+        }
 
         if (!util.doesNonceExist(nonce)) {
             res.status(401).send('Authentication failed! Uknown nonce');
@@ -66,9 +72,20 @@ function init(app) {
                 return;
             }
 
-            res.status(200).end();
+            res.send(JSON.stringify(entry));
         });
     });
+
+    //get all most recent checkins
+    app.get('/checkins', function (req, res) {
+        getRecentCheckins(function (err, checkins) {
+            if (err) {
+                res.status(500).end();
+                return;
+            }
+            res.send(JSON.stringify(checkins)).end();
+        })
+    })
 };
 
 function commitSupportCheckin(signer, nonce, signed_nonce, message, callback) {
@@ -84,6 +101,7 @@ function commitSupportCheckin(signer, nonce, signed_nonce, message, callback) {
         message: message,
         nonce: nonce,
         signed_nonce: signed_nonce,
+        timestamp: new Date().getTime()
     };
 
 //check if this chain exists already!
@@ -110,7 +128,7 @@ function commitSupportCheckin(signer, nonce, signed_nonce, message, callback) {
             console.log('Published new support entry!');
             console.log(entry);
 
-            if (callback) callback(undefined, entry);
+            if (callback) callback(undefined, content);
         }).catch(function (err) {
             console.error(err);
 
@@ -245,11 +263,55 @@ function initCheckinChain(callback) {
     })
 }
 
+function getRecentCheckins(callback) {
+    var support_chain_id = getSupportChainID();
+    console.log('Getting recent entries for ' + support_chain_id);
+
+//check if this chain exists already!
+    cli.getAllEntriesOfChain(support_chain_id).then(function (entries) {
+        console.log(entries)
+        entries = parseSupportEntries(entries);
+
+        /*entries.forEach(function (entry) {
+
+        })*/
+        console.log(JSON.stringify(entries, undefined, 2))
+
+        callback(undefined, entries);
+    }).catch(function (err) {
+        console.error(err);
+        if (callback) callback(err);
+    });
+}
+
 function getSupportChainID() {
     // console.log(chain_salt + ' USING SALT');
     return new Chain(Entry.builder()
         .extId(new Buffer(crypto.createHash('md5').update(util.getSalt() + 'dbgrow_support').digest("hex"), 'utf8'))
         .build()).id.toString('hex')
+}
+
+function parseSupportEntries(raw_entries) {
+    return raw_entries.map(function (entry) {
+        return parseSupportEntry(entry)
+    })
+}
+
+function parseSupportEntry(raw_entry) {
+    var entry = JSON.parse(raw_entry.content);
+    entry.timestamp = raw_entry.timestamp;
+    return entry;
+}
+
+function validateParsedEntry(entry) {
+    try {
+        console.log('euuid: ', entry.uuid)
+        console.log('esig: ', entry.uuid_sig)
+        return public_key.verify(entry.uuid, entry.uuid_sig, 'utf8', 'hex');
+    } catch (e) {
+        console.error('\nError validating entry: ' + e.message + '\n');
+        return false;
+    }
 }
 
 module.exports = {

@@ -24,6 +24,12 @@ function init() {
         //load hosts from file
         contacts = JSON.parse(contacts_data);
         console.log('Found ' + contacts.length + ' Contacts!');
+
+        contacts.forEach(function (contact) {
+            //try to parse their public key
+            var public_key = new NodeRSA();
+            public_key.importKey(contact.public_key, 'public');
+        })
     });
 }
 
