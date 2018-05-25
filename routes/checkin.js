@@ -5,7 +5,11 @@ var fs = require('fs');
 
 //factom stuff
 var {FactomCli} = require('factom');
-var cli = new FactomCli();
+var cli = new FactomCli({
+    factomd: {
+        host: '88.200.170.90' //ilzheev (De Facto)#4781 on Discord's testnet courtesy node
+    }
+});
 var {Entry} = require('factom/src/entry');
 var {Chain} = require('factom/src/chain');
 
@@ -117,14 +121,14 @@ function commitSupportCheckin(signer, nonce, signed_nonce, message, callback) {
         console.log("chain exists! Writing entry...")
 
         var new_entry = Entry.builder()
-            .chainId(support_chain_id)
+            .chainId(support_chain_id.toString())
             .extId('' + new Date().getTime(), 'utf8')
             .content(JSON.stringify(content), 'utf8')
-            .build()
+            .build();
 
         console.log(new_entry);
 
-        cli.addEntry(new_entry, process.env.FACTOM_EC).then(function (entry) {
+        cli.addEntry(new_entry, process.env.FACTOM_ES).then(function (entry) {
             console.log('Published new support entry!');
             console.log(entry);
 
@@ -265,17 +269,17 @@ function initCheckinChain(callback) {
 
 function getRecentCheckins(callback) {
     var support_chain_id = getSupportChainID();
-    console.log('Getting recent entries for ' + support_chain_id);
+    // console.log('Getting recent entries for ' + support_chain_id);
 
 //check if this chain exists already!
     cli.getAllEntriesOfChain(support_chain_id).then(function (entries) {
-        console.log(entries)
+        // console.log(entries)
         entries = parseSupportEntries(entries);
 
         /*entries.forEach(function (entry) {
 
         })*/
-        console.log(JSON.stringify(entries, undefined, 2))
+        // console.log(JSON.stringify(entries, undefined, 2))
 
         callback(undefined, entries);
     }).catch(function (err) {
