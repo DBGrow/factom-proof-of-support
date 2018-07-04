@@ -3,91 +3,117 @@ var fs = require('fs');
 var crypto = require('crypto');
 var NodeRSA = require('node-rsa');
 
-//factom stuff
-var {FactomCli} = require('factom');
-var cli = new FactomCli();
+
 var {Entry} = require('factom/src/entry');
 var {Chain} = require('factom/src/chain');
 
 var util = require('../routes/util');
 
-var contacts = [];
-var alert_max_interval_ms = 5 * 60000; //5 mins
+var cli = util.getFactomCli();
 
-function init() {
+var contacts = [];
+var jsonContacts = [];
+
+function init(app) {
     fs.readFile('./contacts/contacts.json', function (err, contacts_data) {
         if (err) {
             console.log('No contacts file found. Starting from scratch...');
+            initContactsChain();
             return;
         }
 
         //load hosts from file
-        contacts = JSON.parse(contacts_data);
-        console.log('Found ' + contacts.length + ' Contacts!');
+        jsonContacts = JSON.parse(contacts_data);
+        console.log('Found ' + jsonContacts.length + ' Contacts in JSON!');
 
-        contacts.forEach(function (contact) {
+        jsonContacts.forEach(function (contact) {
             //try to parse their public key
             var public_key = new NodeRSA();
             public_key.importKey(contact.public_key, 'public');
-        })
+        });
+
+        //initialize the contact chain
+        initContactsChain();
+    });
+
+    //set routes
+    app.get('/contacts', function (req, res) {
+        getContacts(function (err, contacts) {
+            if (err) {
+                console.error(err);
+                res.status(500).send(err.message);
+                return;
+            }
+
+            res.send(JSON.stringify(contacts));
+        });
     });
 }
 
 function commitAllContacts() {
-    contacts.forEach(function (contact) {
-        commitContact(contact);
-    })
+    console.log("attempting to commit contacts!");
+
+    //get all existing elements of the Contact chain
+
+    getContacts(function (err, allContacts) {
+        if (err) {
+            console.error(err);
+            return;
+        }
+
+
+        contacts = allContacts;
+
+        //check if the contact from JSON exists, if not then commit it
+        jsonContacts.forEach(function (jsonContact) {
+
+            //try to find the exact contact in JSON, if it cant be found then commit it
+            if (!allContacts.find(function (contact) {
+                return JSON.stringify(jsonContact) == JSON.stringify(contact); //a bug is happening here that causes Array.includes and other methods to fail! Thus the strange comparison
+            })) {
+                console.log("committing: " + JSON.stringify(jsonContact));
+                commitContact(jsonContact);
+            } else {
+                console.log("No new contacts to commit");
+            }
+        });
+
+    });
+
+
 }
 
 function commitContact(contact) {
-    var chain_id = 'dbgrow_support';
-    var contact_chain_id = getContactChainID(chain_id);
-    console.log('Checking if contact chain with id ' + contact_chain_id + ' exists');
-
-    //check if this chain exists already!
-    cli.chainExists(contact_chain_id).then(function (exists) {
-        if (!exists) {
-            console.error('Contact chain did not exist yet! Please create it first')
-            if (callback) callback(new Error('Chain did not exist yet! Please create it first'));
-            return;
-        }
 
         //set up signing
         var nonce = crypto.randomBytes(16).toString('hex');
 
-        var private_support_key_string = fs.readFileSync('./keys/support/key.pem').toString();
-
-        //check if this key exists
-        var private_support_key = new NodeRSA();
-        private_support_key.importKey(private_support_key_string, 'private');
-
         //sign this contact entry with the support app's admin private key
-        var signed_nonce = private_support_key.sign(nonce, 'hex', 'utf8').toString();
+    var signed_nonce = util.getSupportPrivateKey().sign(nonce, 'hex', 'utf8').toString();
 
         //this will be the content of our signed entries!
         var content = {
             type: 'contact',
-            name: contact.name,
+            contact: contact,
             public_key: contact.public_key,
             nonce: nonce,
             signed_nonce: signed_nonce,
         };
 
-
         //write an entry to the chain!
 
-        console.log("chain exists! Writing entry...")
+    console.log("chain exists! Writing entry...");
 
         var new_entry = Entry.builder()
-            .chainId(contact_chain_id)
+            .chainId(util.getContactChainId())
             .extId('' + new Date().getTime(), 'utf8')
             .content(JSON.stringify(content), 'utf8')
-            .build()
+            .build();
 
         console.log(new_entry);
 
-        cli.addEntry(new_entry, process.env.FACTOM_EC).then(function (entry) {
-            console.log('Published new support entry!');
+    cli.addEntry(new_entry, process.env.FACTOM_ES).then(function (entry) {
+        console.log('Published new contact entry!');
             console.log(entry);
 
             // if (callback) callback(undefined, entry);
@@ -97,69 +123,21 @@ function commitContact(contact) {
             if (callback) callback(err);
             else console.error(err);
         });
-
-        /*
-
-                console.log('Chain does not exist! Creating:');
-
-                //set the keys for the new support chain's root key.
-                // Administrative actions such as adding contact signatures will be authenticated
-                // using signed material from this public key's counterpart
-                var private_support_key_string = fs.readFileSync('./keys/support/key.pem').toString();
-                var public_support_key_string = fs.readFileSync('./keys/support/public.pem').toString();
-
-                var private_support_key = new NodeRSA();
-                private_support_key.importKey(private_support_key_string, 'private');
-
-                var public_support_key = new NodeRSA();
-                public_support_key.importKey(public_support_key_string, 'public');
-
-                content.support_app_public_key = public_support_key_string.toString();
-                content.support_app_signed_nonce = private_support_key.sign(nonce, 'hex', 'utf8').toString();
-
-                console.log(JSON.stringify(content, undefined, 2));
-
-                //create the chain
-                var app_chain_ext_id = crypto.createHash('md5').update(util.getSalt() + chain_id).digest('hex');
-                console.log('extid: ' + app_chain_ext_id);
-
-                var new_entry0 = Entry.builder()
-                    .extId(new Buffer(app_chain_ext_id), 'utf8')
-                    .content(JSON.stringify(content), 'utf8')
-                    .build();
-
-                console.log(new_entry0);
-                console.log(new_entry0.content.toString('utf8'));
-
-                var new_chain = new Chain(new_entry0);
-
-                cli.addChain(new_chain, process.env.FACTOM_EC).then(function (chain) {
-                    console.log('Published new support chain!:');
-                    console.log(chain)
-                    if (callback) callback(undefined, new_entry);
-                }).catch(function (err) {
-                    console.error(err);
-                    if (callback) callback(err);
-                    else console.error(err);
-                })
-
-        */
-
-    }).catch(function (err) {
-        console.error(err);
-    })
 }
 
 function initContactsChain() {
 
-    var chain_id = 'dbgrow_support';
-    var support_chain_id = getContactChainID(chain_id);
-    console.log('Checking if chain with id ' + support_chain_id + ' exists');
+    var contactChainId = util.getContactChainId();
+    console.log('Checking if Contacts chain with id ' + contactChainId + ' exists');
 
-//check if this chain exists already!
-    cli.chainExists(support_chain_id).then(function (exists) {
+    //check if this chain exists already!
+    cli.chainExists(contactChainId).then(function (exists) {
         if (exists) {
-            console.error('Chain already exists! Cannot initialize twice.')
+            console.log('Contact chain already exists!');
+
+            //attempt to commit all contacts
+            commitAllContacts();
+
             return;
         }
 
@@ -168,35 +146,22 @@ function initContactsChain() {
         //set the keys for the new support chain's root key.
         // Administrative actions such as adding contact signatures will be authenticated
         // using signed material from this public key's counterpart
-        var private_support_key_string = fs.readFileSync('./keys/support/key.pem').toString();
-        var public_support_key_string = fs.readFileSync('./keys/support/public.pem').toString();
-
-        //check that these exist!
-
-        var private_support_key = new NodeRSA();
-        private_support_key.importKey(private_support_key_string, 'private');
-
-        var public_support_key = new NodeRSA();
-        public_support_key.importKey(public_support_key_string, 'public');
 
         var nonce = crypto.randomBytes(16).toString('hex');
 
-        var signed_nonce = private_support_key.sign(nonce, 'hex', 'utf8').toString();
+        var signed_nonce = util.getSupportPrivateKey().sign(nonce, 'hex', 'utf8').toString();
 
         //this will be the content of our signed entries!
         var content = {
             type: 'meta',
-            support_app_public_key: public_support_key_string.toString(),
+            support_app_public_key: util.getSupportPublicKey().exportKey('public'),
             nonce: nonce,
             signed_nonce: signed_nonce,
             message: "This is the beginning of DBGrow's Factom Support contacts chain! Support staff's names/info and signatures will be posted here. Each entry will be signed by the public key in this entry's counterpart"
         };
 
-        console.log(JSON.stringify(content, undefined, 2));
-
         //create the chain
         var contact_chain_ext_id = crypto.createHash('md5').update(util.getSalt() + 'dbgrow_support:contacts').digest('hex');
-        console.log('extid: ' + contact_chain_ext_id);
 
         var new_entry0 = Entry.builder()
             .extId(new Buffer(contact_chain_ext_id), 'utf8')
@@ -208,72 +173,96 @@ function initContactsChain() {
 
         var new_chain = new Chain(new_entry0);
 
-        cli.addChain(new_chain, process.env.FACTOM_EC).then(function (chain) {
+        cli.addChain(new_chain, process.env.FACTOM_ES).then(function (chain) {
             console.log('Published new contacts chain!:');
-            console.log(chain)
+            console.log(chain);
+
+            console.log('Waiting 10 minutes then committing ' + jsonContacts.length + ' contacts');
+            //wait 10 minutes
+
+            setTimeout(function () {
+                commitAllContacts();
+            }, 60000 * 10);
+
         }).catch(function (err) {
-            console.error(err);
             console.error(err);
         })
 
     }).catch(function (err) {
         console.error(err);
-        if (callback) callback(err);
-        else console.error(err);
-    })
-
-}
-
-function dispatchNotification(host) {
-    if (!host.notify) {
-        console.error('Notification to host was ignored!');
-        return;
-    }
-
-    var html = "";
-    html += "DOWN ALERT: " + host.name ? (host.name + host.ip + ':' + host.port) : (host.ip + ':' + host.port);
-    html += '\n\n Visit <a href="https://dbgrow.com/checkin/128j89"> here to checkin!</a> ';
-
-    var text = "";
-    text += "DOWN ALERT: " + host.name ? (host.name + host.ip + ':' + host.port) : (host.ip + ':' + host.port);
-    text += '\n\n Visit https://dbgrow.com/checkin/128j89 here to checkin!';
-
-    contacts.forEach(function (contact) {
-
-        //for each contact, check the last time they were alerted
-        if (contact.last_alerted && (new Date().getTime() - contact.last_alerted.getTime()) < alert_max_interval_ms) {
-            console.error('Ignored alert since last contacted recently');
-            return;
-        }
-
-        //send SMS alert
-        sendText(contact.phone, text);
-
-        //send email alerts to all emails
-        contact.emails.forEach(function (email) {
-            sendEmail(email, "DOWN ALERT: " + host.name ? (host.name + host.ip + ':' + host.port) : (host.ip + ':' + host.port), html);
-        });
-
-        //call the contact's phone
-        sendCall(contact.phone, html);
-
-        contact.last_alerted = new Date();
     });
 }
 
-function getContactChainID() {
-    // console.log(chain_salt + ' USING SALT');
-    return new Chain(Entry.builder()
-        .extId(new Buffer(crypto.createHash('md5').update(util.getSalt() + 'dbgrow_support:contacts').digest("hex"), 'utf8'))
-        .build()).id.toString('hex')
+function getContacts(callback) {
+    util.getFactomdCache().getAllChainEntries(util.getContactChainId(), function (err, entries) {
+        if (err) {
+            if (err.message.includes('not yet included in directory block')) {
+                if (callback) callback(undefined, []);
+                return;
+            }
+
+            if (callback) callback(err);
+            else console.error(err);
+            return;
+        }
+
+        //convert cached entries into final form
+        entries = entries.filter(function (entry) {
+            //validate JSON parseability
+            try {
+                JSON.parse(util.hex2ascii(entry.content));
+                return true;
+            } catch (e) {
+                return false;
+            }
+        });
+
+        entries = entries.map(function (entry) {
+            //convert to JSON from hex string
+            return JSON.parse(util.hex2ascii(entry.content))
+        });
+
+
+        // console.log(JSON.stringify(entries));
+
+        var metaEntry = entries.shift(); //shift off meta entry
+
+        var publicKey = metaEntry.support_app_public_key;
+        if (!publicKey) {
+            if (callback) callback(new Error("Cant verify against nonexistent public support key!"));
+            else console.log("Cant verify against nonexistent public support key!");
+            return;
+        }
+
+        //verify cryptographically
+        entries = entries.filter(function (entry) {
+            try {
+                return util.getSupportPublicKey().verify(entry.nonce, entry.signed_nonce, 'utf8', 'hex');
+            } catch (e) {
+                console.log(e);
+                return false;
+            }
+        });
+
+        //map entries to contacts
+        entries = entries.map(function (entry) {
+            //convert to JSON from hex string
+            return entry.contact
+        });
+
+        //convert to set for uniqueness
+        entries = new Set(entries);
+
+        //back to array
+        entries = Array.from(entries);
+
+        if (callback) callback(undefined, entries);
+    });
 }
 
 module.exports = {
     init: init,
-    dispatchNotification: dispatchNotification,
     getAllContacts: function () {
         return contacts
-    },
-    initContactsChain: initContactsChain,
-    commitAllContacts: commitAllContacts
+    }
 };
