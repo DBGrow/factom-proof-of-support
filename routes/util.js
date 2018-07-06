@@ -1,6 +1,7 @@
 //config
 var chain_salt = '';
 var app_id = '';
+var app_name = '';
 var crypto = require('crypto');
 
 var {Entry} = require('factom/src/entry');
@@ -13,32 +14,33 @@ var {FactomCli} = require('factom');
 
 var {FactomdCache} = require('factomd-cache');
 
-var config = require('../config');
+try {
+    var config = require('../config');
+} catch (e) { //if config cant be found or syntax err
+    throw e;
+}
+
 console.log('config:');
 console.log(config);
 
 chain_salt = config.salt;
 app_id = config.support_app_id;
+app_name = config.support_app_name;
 
-//setup factom
-var cli = new FactomCli({
-    factomd: {
-        host: '88.200.170.90' //ilzheev (De Facto)#4781 on Discord's testnet courtesy node
-    }
-});
+
 
 var fs = require('fs');
 var NodeRSA = require('node-rsa');
 
 
 //check that we have the private and public keys
-if (!fs.existsSync('./keys/support/key.pem') && !fs.existsSync('./keys/support/public.pem')) {
+if (!fs.existsSync('./keys/key.pem') && !fs.existsSync('./keys/public.pem')) {
     console.log('PK didnt exist! Generating...');
     var privateKey = new NodeRSA({b: 2048});
 
     //write the key files
-    fs.writeFileSync('./keys/support/key.pem', privateKey.exportKey('private'));
-    fs.writeFileSync('./keys/support/public.pem', privateKey.exportKey('public'));
+    fs.writeFileSync('./keys/key.pem', privateKey.exportKey('private'));
+    fs.writeFileSync('./keys/public.pem', privateKey.exportKey('public'));
 
     supportPrivateKey = new NodeRSA();
     supportPrivateKey.importKey(privateKey.exportKey('private'), 'private');
@@ -49,8 +51,8 @@ if (!fs.existsSync('./keys/support/key.pem') && !fs.existsSync('./keys/support/p
     console.log('Keys exist! Reading from files...');
 
     try {
-        var privKeyString = fs.readFileSync('./keys/support/key.pem').toString();
-        var pubKeyString = fs.readFileSync('./keys/support/public.pem').toString();
+        var privKeyString = fs.readFileSync('./keys/key.pem').toString();
+        var pubKeyString = fs.readFileSync('./keys/public.pem').toString();
 
 
         supportPrivateKey = new NodeRSA();
@@ -66,27 +68,17 @@ if (!fs.existsSync('./keys/support/key.pem') && !fs.existsSync('./keys/support/p
 var supportPrivateKey;
 var supportPublicKey;
 
-//all configuration options
-var factomdCache = new FactomdCache({
-    factomdParams: { //see https://www.npmjs.com/package/factom#instantiate-factomcli
-        factomd: {
-            host: '88.200.170.90' //ilzheev (De Facto)#4781 on Discord's testnet courtesy node
-        }
-    }
-});
 
 var nonces = new Set();
 module.exports = function (app) {
     app.get('/nonce', function (req, res) {
         var nonce = crypto.randomBytes(16).toString('hex');
-
-        // console.log('SERVER: Generated nonce: ' + nonce);
         nonces.add(nonce);
         res.send(nonce);
     });
 
     app.get('/name', function (req, res) {
-        res.send(module.exports.getAppID())
+        res.send(module.exports.getAppName())
     })
 };
 
@@ -110,6 +102,10 @@ module.exports.getSalt = function () {
 
 module.exports.getAppID = function () {
     return app_id
+};
+
+module.exports.getAppName = function () {
+    return app_name
 };
 
 
@@ -149,4 +145,25 @@ module.exports.getSupportPublicKey = function () {
     return supportPublicKey;
 };
 
-//setup
+//setup factom
+var cli = new FactomCli({
+    factomd: {
+        host: module.exports.getConfig().factomd_api_host ? module.exports.getConfig().factomd_api_host : 'localhost',
+        port: module.exports.getConfig().factomd_api_port ? module.exports.getConfig().factomd_api_port : 8088
+    },
+    walletd: {
+        host: module.exports.getConfig().walletd_api_host ? module.exports.getConfig().walletd_api_host : 'localhost',
+        port: module.exports.getConfig().walletd_api_port ? module.exports.getConfig().walletdd_api_port : 8089
+    }
+});
+
+//configure cache
+var factomdCache = new FactomdCache({
+    factomdParams: { //see https://www.npmjs.com/package/factom#instantiate-factomcli
+
+        factomd: {
+            host: module.exports.getConfig().factomd_api_host ? module.exports.getConfig().factomd_api_host : 'localhost',
+            port: module.exports.getConfig().factomd_api_port ? module.exports.getConfig().factomd_api_port : 8088
+        }
+    }
+});

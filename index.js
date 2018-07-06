@@ -13,7 +13,7 @@ app.listen(3000, function () {
 });
 
 //default setup
-//cache our checkin & contact chains
+//attempt to cache our checkin & contact chains
 util.getFactomdCache().cacheChain(util.getSupportChainId());
 util.getFactomdCache().cacheChain(util.getContactChainId());
 

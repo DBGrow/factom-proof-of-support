@@ -2,7 +2,11 @@
 
 
 
-This app serve provide a way for support teams to prove publicly that they are/were actively present to support a service. Team members submit signed "checkin" messages to the POS server at regular intervals, which are then entered into the Factom blockchain to persist forever.
+A NodeJS app server that  provide a way for support teams to prove publicly that they are/were actively present to support a service. 
+
+
+
+Team members submit signed "checkin" messages to the POS server at regular intervals, which are then entered into the Factom blockchain to persist forever.
 
 
 
@@ -49,58 +53,97 @@ npm install
 
 ## First Time Setup
 
-Limited manual setup is required to operate the app
+Limited manual setup is required to operate the app:
 
 
 
 
 
-### Edit `config.json`
+### Edit `config.json` & Populate `contacts`
 
-Set your app's unique ID in `./config.json`:
-
-`salt` is a random arbitrary value that lets you create different 'versions' of your support app for testing. Change to `` to use the release version of your app. Change to a random value to create a new version.
-
-`support_app_id` is the unique ID of your support application. Change this to a custom valu!
+Set your app's unique ID, name, and other configuration options in in `./config.json`:
 
 ```
 {
-  "salt": "aksdj23fn28fn",
-  "support_app_id": "unique_app_id"
+  "support_app_id": "unique_app_id",
+  "support_app_name": "Test App",
+  "salt": "A1TANPcd4J",
+  "factom_ec":"EC1tE4afVGPrBUStDhZPx1aHf4yHqsJuaDpM7WDbXCcYxruUxj2D",
+  "factom_es":"Es3k4L7La1g7CY5zVLer21H3JFkXgCBCBx8eSM2q9hLbevbuoL6a",
+  "factomd_api_host": "localhost",
+  "factomd_api_port": 8088,
+  "walletd_api_host": "localhost",
+  "walletd_api_port": 8089,
+
+  "contacts": [
+    {
+      "id": "353516811779",
+      "name": "Example",
+      "emails": [
+        "example@example.com"
+      ],
+      "public_key": "-----BEGIN PUBLIC KEY-----MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwKhkZ3PqBn1YzW/y8LMS8kkQ1s25zkn4emYomGSZhe1JL65id07zjbV/Pe+v6HXthxZbNf7zabvTFjl53H96Z4IQEwyvEU6na0UcUF+MfuJrC1P+jTu4RjaSV/OubRydFmpQjWj6Oz378WTySDjGVuEo9ABw0fSGlRNsbzrLaYdcG2dwdzNpg8kCUy5pkdMC7DDC6IOjetkC+l76T/gWbAIoZX0t/HKEb66/n4qtPCPCNisXYgFld9Hz45YZRUtHBKI0o2zX3Km07MbHl3M5s+Wmt79KMbqopdjTtqB8XLdEBC5XG1RTX7oCxAvt0/Fs4v7GLoA0nHrtUE210HMB7wIDAQAB-----END PUBLIC KEY-----"
+    }
+  ]
 }
 ```
 
 
 
+**`support_app_id`** is the unique ID of your proof of support application. Change this to a custom value people will recognize.
 
 
-### Populate `contacts.json`
 
-You must populate the `contacts.json` file in `factom-proof-of-support/contacts` with your team member's details. The file is an array of your organization's contacts that will be notified in the event of a support event. This file also serves to hold the public keys of your support staff.
+**`support_app_name`** is the name of your proof of support application the end users will see
 
-```json
-[
-  {
-    "id": "353516811779",
-    "name": "Devon",
-    "emails": [
-      "devonk@dbgrow.com"
-    ],
-    "phone": "+11231231234",
-    "public_key": "-----BEGIN PUBLIC KEY-----MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEApSBxT+1+SihyXOYANWnBiZFoM05oMM95zwxReG/TxfYRL3IcWRQ3cvlh6JuvIFCZHS5B+wjrkokujKXkdh3ckzkV0yyDUnkIQwFnAv2ASwYO0kcD6yrYBENic0b2ebnq5LW69Iou370Tm4ThkVUm8LXBla7FTuIGDlwtt7HhAEf64Yxb+wax9Zky5XLVtf6pegmJW3jEZ8USo/gGFbp2IADOH5VkpPMa48r+98YiKbhrs2gjfAaReyd5iI9xgE8YIA3P5wlAXvzNY3uA24DF0PdpnnefuI1SrdEbb2V69g70LIUzV8mEtkbIEJFLywd7Clb9tJqkKwEkb12R0RyQMwIDAQAB-----END PUBLIC KEY-----"
-  }
-]
-```
 
-`id` should be some unique string for each contact.
 
-`public_key` should be a 2048B RSA PEM encoded public key for your contact.
+**`salt` **is a random arbitrary value that lets you create different 'versions' of your support app for testing. Change to `` to use the release version of your app. Change to a random value to create a new version.
 
 
 
 
 
-## Start The App
+**`factom_ec`** the public Entry Credit address for the POS server to use to publish chains and authorized entries.
+
+
+
+**`factom_es`** the optional private Entry Credit address for the POS server to use. If supplied the application will not rely upon walletd.
+
+
+
+
+
+**`factomd_api_host`** The IP/DNS address of the Factom API endpoint. Defaults to localhost if not supplied
+
+
+
+**`factomd_api_port`** The integer port address of the Factom API endpoint. Defaults to 8088 if not supplied
+
+
+
+**`walletd_api_host`** The IP/DNS address of the wallet API endpoint. Defaults to localhost if not supplied
+
+
+
+**`walletd_api_port`** The integer port address of the walletd API endpoint. Defaults to 8089 if not supplied
+
+
+
+
+
+**`contacts`** is the array of contacts authorized to use your proof of support application. It's necessary to have at least one contact before publishing a checkin. If a new contact or a change in a contact is detected between runs the new contact will be published to the checkin chain.
+
+- **`contacts[n].id`** The unique ID of the contact
+- **`contacts[n].name`** The screen name of the contact. This should be generated by the contact on the client side.
+- **`contacts[n].emails`** Email points of contact of the contact. This should be generated by the contact on the client side.
+- **`contacts[n].public key`** The 2048B RSA PEM encoded public key of the contact. This should be generated by the contact on the client side.
+
+
+
+
+
+## Start The App Server
 
 To start the app server:
 
@@ -112,11 +155,11 @@ The proof of support service is exposed as an HTTP server on **port 3000**.
 
 
 
-When the app is run for the first time it will generate new RSA keys for your organization in `./keys/support/` if they do not already exist.  Make sure to back these up!
+When the server is run for the first time it will generate new RSA keys for your organization in `./keys/` if they do not already exist.  Make sure to back these up! You can also replace these with your own keys if you wish.
 
 
 
-The app will then initiate the Contacts and Checkin chains if they do not exist. After the block ends (<10 min) the library will commit the contacts you specify in `contacts.json` and you may begin sending checkins.
+The app will then initiate the Contacts and Checkin chains if they do not exist. After the block ends (<10 min) the library will commit the contacts you specify in `config.json` and you may begin sending checkins.
 
 
 

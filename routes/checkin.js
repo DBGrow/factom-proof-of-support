@@ -7,7 +7,7 @@ var cli = util.getFactomCli();
 var {Entry} = require('factom/src/entry');
 var {Chain} = require('factom/src/chain');
 
-var contacts = require('../contacts/contacts');
+var contacts = require('./contacts');
 
 function init(app) {
 
@@ -114,7 +114,7 @@ function commitSupportCheckin(signer, nonce, signed_nonce, message, callback) {
 
         console.log(new_entry);
 
-        cli.addEntry(new_entry, process.env.FACTOM_ES).then(function (entry) {
+        cli.addEntry(new_entry, util.getConfig().factom_es).then(function (entry) {
             console.log('Published new support entry!');
             console.log(entry);
 
@@ -178,7 +178,7 @@ function initCheckinChain() {
 
         var new_chain = new Chain(new_entry0);
 
-        cli.addChain(new_chain, process.env.FACTOM_ES).then(function (chain) {
+        cli.addChain(new_chain, util.getConfig().factom_es).then(function (chain) {
             console.log('Published new support checkin chain!:');
             console.log(chain)
         }).catch(function (err) {

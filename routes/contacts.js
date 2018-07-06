@@ -1,40 +1,32 @@
-var fs = require('fs');
-
 var crypto = require('crypto');
 var NodeRSA = require('node-rsa');
-
 
 var {Entry} = require('factom/src/entry');
 var {Chain} = require('factom/src/chain');
 
-var util = require('../routes/util');
+var util = require('./util');
 
 var cli = util.getFactomCli();
 
 var contacts = [];
-var jsonContacts = [];
 
 function init(app) {
-    fs.readFile('./contacts/contacts.json', function (err, contacts_data) {
-        if (err) {
-            console.log('No contacts file found. Starting from scratch...');
-            initContactsChain();
-            return;
-        }
 
-        //load hosts from file
-        jsonContacts = JSON.parse(contacts_data);
-        console.log('Found ' + jsonContacts.length + ' Contacts in JSON!');
+    //load contacts from config
+    var configContacts = util.getConfig().contacts;
 
-        jsonContacts.forEach(function (contact) {
+    if (configContacts) {
+        console.log('Found ' + configContacts.length + ' Contacts in JSON!');
+
+        configContacts.forEach(function (contact) {
             //try to parse their public key
             var public_key = new NodeRSA();
             public_key.importKey(contact.public_key, 'public');
         });
+    }
 
-        //initialize the contact chain
-        initContactsChain();
-    });
+    //initialize the contact chain
+    initContactsChain();
 
     //set routes
     app.get('/contacts', function (req, res) {
@@ -65,19 +57,21 @@ function commitAllContacts() {
         contacts = allContacts;
 
         //check if the contact from JSON exists, if not then commit it
-        jsonContacts.forEach(function (jsonContact) {
+        if (util.getConfig().contacts) {
+
+            util.getConfig().contacts.forEach(function (configContact) {
 
             //try to find the exact contact in JSON, if it cant be found then commit it
             if (!allContacts.find(function (contact) {
-                return JSON.stringify(jsonContact) == JSON.stringify(contact); //a bug is happening here that causes Array.includes and other methods to fail! Thus the strange comparison
+                return JSON.stringify(configContact) == JSON.stringify(contact); //a bug is happening here that causes Array.includes and other methods to fail! Thus the strange comparison
             })) {
-                console.log("committing: " + JSON.stringify(jsonContact));
-                commitContact(jsonContact);
+                console.log("committing: " + JSON.stringify(configContact));
+                commitContact(configContact);
             } else {
                 console.log("No new contacts to commit");
             }
         });
-
+        }
     });
 
 
@@ -112,7 +106,7 @@ function commitContact(contact) {
 
         console.log(new_entry);
 
-    cli.addEntry(new_entry, process.env.FACTOM_ES).then(function (entry) {
+    cli.addEntry(new_entry, util.getConfig().factom_es).then(function (entry) {
         console.log('Published new contact entry!');
             console.log(entry);
 
@@ -173,12 +167,13 @@ function initContactsChain() {
 
         var new_chain = new Chain(new_entry0);
 
-        cli.addChain(new_chain, process.env.FACTOM_ES).then(function (chain) {
+        cli.addChain(new_chain, util.getConfig().factom_es).then(function (chain) {
             console.log('Published new contacts chain!:');
             console.log(chain);
 
-            console.log('Waiting 10 minutes then committing ' + jsonContacts.length + ' contacts');
-            //wait 10 minutes
+            console.log('Waiting 10 minutes then committing ' + util.getConfig().contacts ? util.getConfig().contacts.length : 0 + ' contacts');
+            
+            //wait 10 minutes, then commit the contacts
 
             setTimeout(function () {
                 commitAllContacts();
