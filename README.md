@@ -63,7 +63,7 @@ Limited manual setup is required to operate the app:
 
 Set your app's unique ID, name, and other configuration options in in `./config.json`:
 
-```
+```json
 {
   "support_app_id": "unique_app_id",
   "support_app_name": "Test App",

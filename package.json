@@ -12,7 +12,6 @@
     "express": "4.16.3",
     "factom": "0.2.0",
     "factomd-cache": "0.1.1",
-    "node-rsa": "0.4.2",
-    "unirest": "0.5.1"
+    "node-rsa": "0.4.2"
   }
 }
